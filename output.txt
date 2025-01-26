@@ -1,0 +1,3 @@
+First_address = 3QiWtEMyzcrTMFyyfTzh2pvvhUPMuLa6HR , balance = 100
+second_address = 37fwM4sx1HX2k7frmds65bzuiv4GnVbnqV 
+thrid_address = 3Euv4Ta9Nj2saginhPzj3Kkjmz4SGLMFfV

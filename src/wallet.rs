@@ -12,6 +12,7 @@ use crypto::ed25519 ;
 use rand::RngCore ;
 use rand::rngs::OsRng ;
 
+
 #[derive(Serialize,Deserialize, Debug,Clone,PartialEq)]
 pub struct Wallet{
     pub secret_key : Vec<u8>,
@@ -75,6 +76,7 @@ impl Wallets {
         drop(db);
         Ok(wlt)
     }
+   
     pub fn create_wallet(&mut self) -> String {
         let wallet = Wallet::new();
         let address = wallet.get_address();
@@ -82,6 +84,7 @@ impl Wallets {
         info!("Create wallet: {}",address);
         address
     }
+   
     pub fn get_all_addresses(&self) -> Vec<String> {
         let mut addresses = Vec::new();
         for (address,_ ) in &self.wallets {
@@ -89,6 +92,7 @@ impl Wallets {
         }
         addresses
     }
+    
     pub fn get_wallet(&self, address : &str) ->Option<&Wallet>{
         self.wallets.get(address)
     }

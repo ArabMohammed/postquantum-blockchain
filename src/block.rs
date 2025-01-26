@@ -1,9 +1,11 @@
 
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
+use sled::transaction;
 use std::time::SystemTime;
+use merkle_cbt::merkle_tree::Merge ;
+use merkle_cbt::merkle_tree::CBMT ;
 use log::info;
-
 use crate::transaction::Transaction;
 
 const TARGET_HEXT: usize = 4; 
@@ -14,16 +16,22 @@ pub struct Block {
     transactions : Vec<Transaction>,
     prev_block_hash : String ,
     hash : String,
-    height : usize , 
+    height : i32 , 
     nonce : i32 ,
 }
 
 
 impl Block {
+
+    pub fn get_height(&self) -> i32 {
+        self.height
+    }
+    
     pub fn get_transaction(&self) -> &Vec<Transaction>{
         &self.transactions
     }
-    pub fn new_block(transactions: Vec<Transaction>, prev_block_hash : String, height : usize) -> Result<Block,Box<dyn std::error::Error>> {
+    
+    pub fn new_block(transactions: Vec<Transaction>, prev_block_hash : String, height : i32) -> Result<Block,Box<dyn std::error::Error>> {
         let timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)?
         .as_millis();
@@ -44,7 +52,6 @@ impl Block {
     }
     
     fn run_proof_of_work(&mut self) -> Result<(),Box<dyn std::error::Error>>{
-        info!("Mining the block");
         while !self.validate()?{
             self.nonce += 1 ;
         }
@@ -60,7 +67,7 @@ impl Block {
     fn prepare_hash_data(&self) -> Result<Vec<u8>,Box<dyn std::error::Error>> {
         let content  = (
             self.prev_block_hash.clone(),
-            self.transactions.clone(),
+            self.get_root_hash_merkle_tree_transactions()?,
             self.timestamp,
             TARGET_HEXT,
             self.nonce
@@ -87,7 +94,35 @@ impl Block {
         self.prev_block_hash.clone()
     }
 
+    fn get_root_hash_merkle_tree_transactions(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>>{
+        let mut transactions = Vec::new();
+        for tx in &self.transactions {
+             transactions.push(tx.hash()?.as_bytes().to_owned());
+        }
+        let tree = CBMT::<Vec<u8>, MergeYX>::build_merkle_tree(&*transactions);
+        Ok(tree.root()) 
+     }
+
 }
 
+struct MergeYX {
 
+}
+impl Merge for MergeYX {
+    type Item = Vec<u8> ;
+    fn merge(left: &Self::Item, right: &Self::Item) -> Self::Item {
+        let mut hasher = Sha256::new();
+        let mut data : Vec<u8> = left.clone();
+        data.append(&mut right.clone());
+        hasher.input(&data);
+        let mut re  : [u8;32] = [0;32];
+        hasher.result(&mut re);
+        re.to_vec()
+    }
+}
+
+#[cfg(test)]
+mod test{
+
+}
 

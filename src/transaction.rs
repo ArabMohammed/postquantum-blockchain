@@ -3,7 +3,7 @@ use std::{collections::HashMap};
 use crypto::{digest::Digest, ed25519, sha2::Sha256};
 use failure::format_err;
 use sled::transaction;
-use crate::{blockchain::Blockchain, tx::{self, TXInput, TXOutput}, wallet::{self, hash_pub_key, Wallets}};
+use crate::{blockchain::Blockchain, tx::{self, TXInput, TXOutput}, utxoset::UTXOSet, wallet::{self, hash_pub_key, Wallets}};
 use log::{error, info};
 
 #[derive(serde::Serialize, serde::Deserialize,Debug, Clone)]
@@ -20,7 +20,7 @@ pub struct Transaction {
 impl Transaction {
 
     // NEWTXOTransaction creates a new transaction
-    pub fn new_UTXO(from : &str, to : &str, amount : i32 , bc: &Blockchain) -> Result<Transaction,Box<dyn std::error::Error>>{
+    pub fn new_UTXO(from : &str, to : &str, amount : i32 , bc: &UTXOSet) -> Result<Transaction,Box<dyn std::error::Error>>{
         let mut vin = Vec::new();
         
         let wallets = Wallets::new()?;
@@ -54,11 +54,13 @@ impl Transaction {
         
         let mut vout = vec![TXOutput::new(amount, to.to_string())?];
         
+        //println!("the send amount : {}, is smaller than avaikable one : {}",amount,acc_v.0);
+        
         if acc_v.0 > amount{
-            vout.push(TXOutput{
-                value : acc_v.0 - amount,
-                pub_key_hash : from.into(),
-            });
+            vout.push(TXOutput::new(
+                acc_v.0 - amount,
+                from.to_string()
+            )?);
         }
         
         let mut tx = Transaction {
@@ -67,7 +69,7 @@ impl Transaction {
             vout
         };
         tx.id=tx.hash()?;
-        bc.sign_transaction(&mut tx,&wallet.secret_key)?;
+        bc.blockchain.sign_transaction(&mut tx,&wallet.secret_key)?;
         Ok(tx)
     }
 
@@ -116,29 +118,63 @@ impl Transaction {
 
     pub fn sign(&mut self, private_key : &[u8], prev_TXs : HashMap<String,Transaction>,
         )-> Result<(),Box<dyn std::error::Error>>{
-            if self.is_coinbase(){
-                return Ok(());
-            }
-            for vin in &self.vin{
-                if prev_TXs.get(&vin.txid).unwrap().id.is_empty(){
-                    return Err(format_err!("Error: Previous transaction is not correct").into());
-                }
-            }
-            let mut tx_copy = self.trim_copy();
-
-            for in_id in 0..tx_copy.vin.len(){
-                let prev_tx = prev_TXs.get(&tx_copy.vin[in_id].txid).unwrap();
-                tx_copy.vin[in_id].signature.clear();
-                tx_copy.vin[in_id].pub_key = prev_tx.vout[tx_copy.vin[in_id].vout as usize].pub_key_hash.clone();
-                tx_copy.id=tx_copy.hash()?;
-                tx_copy.vin[in_id].pub_key=Vec::new();
-                let signature = ed25519::signature(tx_copy.id.as_bytes(), private_key);
-                self.vin[in_id].signature=signature.to_vec();
-            }   
-            Ok(())
+        if self.is_coinbase(){
+            return Ok(());
         }
-    
-    pub fn verify(&mut self, prev_TXs : HashMap<String,Transaction>)-> Result<bool,Box<dyn std::error::Error>>{
+        for vin in &self.vin{
+            if prev_TXs.get(&vin.txid).unwrap().id.is_empty(){
+                return Err(format_err!("Error: Previous transaction is not correct").into());
+            }
+        }
+        let mut tx_copy = self.trim_copy();
+
+        for in_id in 0..tx_copy.vin.len(){
+            let prev_tx = prev_TXs.get(&tx_copy.vin[in_id].txid).unwrap();
+            tx_copy.vin[in_id].signature.clear();
+            tx_copy.vin[in_id].pub_key = prev_tx.vout[tx_copy.vin[in_id].vout as usize].pub_key_hash.clone();
+            tx_copy.id=tx_copy.hash()?;
+            tx_copy.vin[in_id].pub_key=Vec::new();
+            let signature = ed25519::signature(tx_copy.id.as_bytes(), private_key);
+            self.vin[in_id].signature=signature.to_vec();
+        }   
+        Ok(())
+    }
+    /* 
+    pub fn verify(&self, prev_TXs: HashMap<String, Transaction>) -> Result<bool> {
+        if self.is_coinbase() {
+            return Ok(true);
+        }
+
+        for vin in &self.vin {
+            if prev_TXs.get(&vin.txid).unwrap().id.is_empty() {
+                return Err(format_err!("ERROR: Previous transaction is not correct"));
+            }
+        }
+
+        let mut tx_copy = self.trim_copy();
+
+        for in_id in 0..self.vin.len() {
+            let prev_Tx = prev_TXs.get(&self.vin[in_id].txid).unwrap();
+            tx_copy.vin[in_id].signature.clear();
+            tx_copy.vin[in_id].pub_key = prev_Tx.vout[self.vin[in_id].vout as usize]
+                .pub_key_hash
+                .clone();
+            tx_copy.id = tx_copy.hash()?;
+            tx_copy.vin[in_id].pub_key = Vec::new();
+
+            if !ed25519::verify(
+                &tx_copy.id.as_bytes(),
+                &self.vin[in_id].pub_key,
+                &self.vin[in_id].signature,
+            ) {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
+    */
+    pub fn verify(&self, prev_TXs : HashMap<String,Transaction>)-> Result<bool,Box<dyn std::error::Error>>{
         if self.is_coinbase(){
             return Ok(true);
         }
